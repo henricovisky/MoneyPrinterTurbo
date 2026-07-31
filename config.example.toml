@@ -212,7 +212,7 @@ mimo_tts_style_prompt = "请用自然、清晰、适合短视频旁白的语气�
 # Subtitle provider: "edge" or "whisper". Whisper is loaded only when selected
 # explicitly; Edge failures do not trigger an automatic Whisper model download.
 # Leave empty to skip generation.
-subtitle_provider = "edge"
+subtitle_provider = "whisper"
 
 # FFmpeg is normally downloaded and detected automatically. If detection fails,
 # download it from https://www.gyan.dev/ffmpeg/builds/ and set the executable.
@@ -279,7 +279,7 @@ upload_post_max_pending_tasks = 10
 [whisper]
 # The model is downloaded automatically on first use unless a matching local
 # directory exists at ./models/whisper-{model_size}.
-model_size = "large-v3"
+model_size = "large-v3-turbo"
 # device: "cpu" or "cuda". Common compute types include "int8" for CPU and
 # "float16" or "int8_float16" for CUDA.
 device = "cpu"
