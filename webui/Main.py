@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import webbrowser
 from collections.abc import Mapping
 from datetime import datetime
@@ -42,7 +43,7 @@ from app.models.schema import (
     VideoTransitionMode,
 )
 from app.services import bgm as bgm_service
-from app.services import cache_manager, llm, video, voice, webui_task
+from app.services import cache_manager, llm, long_video, video, voice, webui_task
 from app.services import elevenlabs_music as elevenlabs_music_service
 from app.services import sonilo as sonilo_service
 from app.services import state as sm
@@ -3906,6 +3907,135 @@ def _render_generation_controls(
     return start_button
 
 
+def _save_lofi_upload(upload, target_dir: str, prefix: str, allowed_extensions: set[str]):
+    """Salva um upload da fábrica Lofi em um diretório temporário isolado."""
+    file_path = _build_uploaded_file_path(
+        upload,
+        target_dir,
+        allowed_extensions,
+        prefix,
+    )
+    with open(file_path, "wb") as file:
+        file.write(upload.getbuffer())
+    return file_path
+
+
+def _render_lofi_factory():
+    """Renderiza o gerador de vídeos longos dentro da WebUI principal."""
+    st.subheader("🎷 Fábrica de vídeos Lofi/Jazz")
+    st.caption("Vídeos em loop, playlist com crossfade e marca d'água em 1080p.")
+
+    video_uploads = st.file_uploader(
+        "Vídeos base (.mp4)",
+        type=["mp4", "MP4"],
+        accept_multiple_files=True,
+        key="lofi_video_uploads",
+    )
+    audio_uploads = st.file_uploader(
+        "Trilhas de áudio (.mp3 ou .wav)",
+        type=["mp3", "MP3", "wav", "WAV"],
+        accept_multiple_files=True,
+        key="lofi_audio_uploads",
+    )
+    watermark_upload = st.file_uploader(
+        "Marca d'água (.png)", type=["png", "PNG"], key="lofi_watermark_upload"
+    )
+
+    position_col, effect_col, duration_col = st.columns(3)
+    with position_col:
+        watermark_x = st.number_input("Marca d'água X", value=40, step=1, key="lofi_x")
+        watermark_y = st.number_input("Marca d'água Y", value=40, step=1, key="lofi_y")
+    with effect_col:
+        transition_options = {
+            "Sem transição": "none",
+            "Fade": "fade",
+            "Dissolver": "dissolve",
+            "Deslizar para esquerda": "wipeleft",
+            "Deslizar para direita": "slideright",
+            "Abrir círculo": "circleopen",
+        }
+        transition_label = st.selectbox(
+            "Transição entre vídeos",
+            transition_options,
+            key="lofi_transition",
+        )
+        brightness = st.slider(
+            "Brilho", -1.0, 1.0, 0.0, 0.05, key="lofi_brightness"
+        )
+    with duration_col:
+        duration_minutes = st.number_input(
+            "Duração final (minutos)",
+            min_value=1,
+            value=60,
+            step=1,
+            key="lofi_duration_minutes",
+        )
+
+    if st.button(
+        "Gerar Vídeo Longo", type="primary", use_container_width=True, key="lofi_generate"
+    ):
+        if not video_uploads or not audio_uploads or not watermark_upload:
+            st.error("Envie ao menos um vídeo, uma trilha de áudio e a marca d'água.")
+            return
+
+        progress = st.progress(0.0, text="Preparando arquivos...")
+        log = st.empty()
+
+        def update_progress(value: float, message: str) -> None:
+            progress.progress(max(0.0, min(value, 1.0)), text=message)
+            log.code(message, language=None)
+
+        try:
+            work_dir = tempfile.mkdtemp(prefix="mpt-lofi-")
+            video_paths = [
+                _save_lofi_upload(upload, work_dir, "video", {".mp4"})
+                for upload in video_uploads
+            ]
+            audio_paths = [
+                _save_lofi_upload(upload, work_dir, "audio", {".mp3", ".wav"})
+                for upload in audio_uploads
+            ]
+            watermark_path = _save_lofi_upload(
+                watermark_upload, work_dir, "watermark", {".png"}
+            )
+            output_path = os.path.join(work_dir, "lofi-jazz-1080p.mp4")
+            duration, audio_uses, video_count = long_video.render_long_video(
+                video_paths=video_paths,
+                audio_paths=audio_paths,
+                watermark_path=watermark_path,
+                output_path=output_path,
+                watermark_x=int(watermark_x),
+                watermark_y=int(watermark_y),
+                target_duration=float(duration_minutes) * 60,
+                transition=transition_options[transition_label],
+                brightness=float(brightness),
+                on_progress=update_progress,
+            )
+            st.session_state["lofi_output"] = output_path
+            hours, remainder = divmod(round(duration), 3600)
+            minutes, seconds = divmod(remainder, 60)
+            st.success(
+                f"Concluído: {hours:02d}:{minutes:02d}:{seconds:02d} · {video_count} vídeo(s) "
+                f"disponível(is) · {audio_uses} seleção(ões) de áudio."
+            )
+        except Exception as exc:
+            progress.empty()
+            logger.exception(f"Lofi factory failed: {exc}")
+            st.exception(exc)
+
+    output_file = st.session_state.get("lofi_output", "")
+    if output_file and os.path.isfile(output_file):
+        with open(output_file, "rb") as video_file:
+            st.download_button(
+                "Download do vídeo 1080p",
+                data=video_file,
+                file_name="lofi-jazz-1080p.mp4",
+                mime="video/mp4",
+                use_container_width=True,
+                key="lofi_download",
+            )
+
+
 def _render_application():
     """按固定顺序渲染顶部栏、弹窗、生成表单和任务结果。"""
     _render_top_bar()
@@ -3920,6 +4050,9 @@ def _render_application():
     restore_succeeded = st.session_state.pop("task_restore_succeeded", False)
     if restore_applied or restore_succeeded:
         st.success(tr("Task Configuration Loaded"))
+
+    with st.expander("🎷 Fábrica de vídeos Lofi/Jazz", expanded=False):
+        _render_lofi_factory()
 
     with st.container(key="main_settings_grid"):
         panel = st.columns(4)

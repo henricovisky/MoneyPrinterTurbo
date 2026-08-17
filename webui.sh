@@ -15,6 +15,8 @@ export PYTHONPATH="$CURRENT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 # 最终出现 502。默认绑定并打开 127.0.0.1，与 Windows 启动脚本保持一致。
 MPT_WEBUI_HOST="${MPT_WEBUI_HOST:-127.0.0.1}"
 MPT_WEBUI_PORT="${MPT_WEBUI_PORT:-8501}"
+MPT_WEBUI_APP="${MPT_WEBUI_APP:-webui/Main.py}"
+MPT_WEBUI_MAX_UPLOAD_MB="${MPT_WEBUI_MAX_UPLOAD_MB:-2048}"
 
 if [ -x "$CURRENT_DIR/.venv/bin/python" ]; then
   PORT_CHECK_CMD="$CURRENT_DIR/.venv/bin/python"
@@ -70,9 +72,11 @@ fi
 MPT_WEBUI_PORT="$SELECTED_WEBUI_PORT"
 
 echo "***** WebUI address: http://$MPT_WEBUI_HOST:$MPT_WEBUI_PORT *****"
-"$@" run "$CURRENT_DIR/webui/Main.py" \
+echo "***** WebUI app: $MPT_WEBUI_APP *****"
+"$@" run "$CURRENT_DIR/$MPT_WEBUI_APP" \
   --server.address="$MPT_WEBUI_HOST" \
   --server.port="$MPT_WEBUI_PORT" \
+  --server.maxUploadSize="$MPT_WEBUI_MAX_UPLOAD_MB" \
   --browser.serverAddress="$MPT_WEBUI_HOST" \
   --browser.gatherUsageStats=False \
   --client.toolbarMode=minimal \
