@@ -28,6 +28,13 @@ def test_filters_contain_transition_brightness_and_watermark():
     assert "[a0][a1]acrossfade=d=5:c1=tri:c2=tri[aout]" in final
 
 
+def test_filter_can_omit_watermark():
+    filters = build_filter_complex(1, None, 0, 0, 5.0)
+
+    assert "[base]null[vout]" in filters
+    assert "colorchannelmixer" not in filters
+
+
 def test_command_uses_direct_ffmpeg_with_long_video_settings(monkeypatch):
     monkeypatch.setattr("app.services.long_video.utils.get_ffmpeg_binary", lambda: "ffmpeg")
     command = build_ffmpeg_command(

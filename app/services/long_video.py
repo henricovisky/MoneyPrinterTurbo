@@ -143,7 +143,7 @@ def build_visual_filter(
 
 def build_filter_complex(
     audio_count: int,
-    watermark_input_index: int,
+    watermark_input_index: int | None,
     watermark_x: int,
     watermark_y: int,
     crossfade_seconds: float,
@@ -156,9 +156,18 @@ def build_filter_complex(
         "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
         "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,"
         f"eq=brightness={brightness:g}[base]",
-        f"[{watermark_input_index}:v]format=rgba,colorchannelmixer=aa=0.8[watermark]",
-        f"[base][watermark]overlay=x={watermark_x}:y={watermark_y}:format=auto[vout]",
     ]
+    if watermark_input_index is None:
+        filters.append("[base]null[vout]")
+    else:
+        filters.extend(
+            [
+                f"[{watermark_input_index}:v]format=rgba,"
+                "colorchannelmixer=aa=0.8[watermark]",
+                f"[base][watermark]overlay=x={watermark_x}:y={watermark_y}:"
+                "format=auto[vout]",
+            ]
+        )
     for index in range(audio_count):
         filters.append(
             f"[{index + 1}:a]aresample=48000,"
@@ -181,7 +190,7 @@ def build_filter_complex(
 def build_ffmpeg_command(
     video_path: str | Path,
     audio_paths: Sequence[str | Path],
-    watermark_path: str | Path,
+    watermark_path: str | Path | None,
     output_path: str | Path,
     duration: float,
     watermark_x: int,
@@ -201,13 +210,14 @@ def build_ffmpeg_command(
     ]
     for audio_path in audio_paths:
         command.extend(["-i", str(audio_path)])
-    command.extend(["-loop", "1", "-i", str(watermark_path)])
+    if watermark_path:
+        command.extend(["-loop", "1", "-i", str(watermark_path)])
     command.extend(
         [
             "-filter_complex",
             build_filter_complex(
                 len(audio_paths),
-                len(audio_paths) + 1,
+                len(audio_paths) + 1 if watermark_path else None,
                 watermark_x,
                 watermark_y,
                 crossfade_seconds,
@@ -242,6 +252,45 @@ def build_ffmpeg_command(
         ]
     )
     return command
+
+
+def render_watermark_preview(
+    video_path: str | Path,
+    watermark_path: str | Path,
+    output_path: str | Path,
+    watermark_x: int,
+    watermark_y: int,
+) -> Path:
+    """Gera um PNG de prévia com o mesmo overlay de marca d'água da saída."""
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        utils.get_ffmpeg_binary(),
+        "-hide_banner",
+        "-y",
+        "-i",
+        str(video_path),
+        "-loop",
+        "1",
+        "-i",
+        str(watermark_path),
+        "-filter_complex",
+        "[0:v]select=eq(n\\,0),scale=960:540:force_original_aspect_ratio=decrease,"
+        "pad=960:540:(ow-iw)/2:(oh-ih)/2,setsar=1[base];"
+        "[1:v]scale=iw/2:ih/2,format=rgba,colorchannelmixer=aa=0.8[watermark];"
+        f"[base][watermark]overlay=x={watermark_x / 2:g}:y={watermark_y / 2:g}:"
+        "format=auto[preview]",
+        "-map",
+        "[preview]",
+        "-frames:v",
+        "1",
+        str(output),
+    ]
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0 or not output.is_file():
+        output.unlink(missing_ok=True)
+        raise RuntimeError("Não foi possível gerar a pré-visualização da marca d'água.")
+    return output
 
 
 def _time_to_seconds(value: str) -> float:
@@ -357,7 +406,7 @@ def render_visual_cycle(
 def render_long_video(
     video_paths: Sequence[str | Path],
     audio_paths: Sequence[str | Path],
-    watermark_path: str | Path,
+    watermark_path: str | Path | None,
     output_path: str | Path,
     watermark_x: int,
     watermark_y: int,
@@ -373,7 +422,8 @@ def render_long_video(
     if not video_paths or not audio_paths:
         raise ValueError("Envie ao menos um vídeo e uma trilha de áudio.")
     paths = [*(Path(path) for path in video_paths), *(Path(path) for path in audio_paths)]
-    paths.append(Path(watermark_path))
+    if watermark_path:
+        paths.append(Path(watermark_path))
     missing = [str(path) for path in paths if not path.is_file()]
     if missing:
         raise FileNotFoundError(f"Arquivos não encontrados: {', '.join(missing)}")

@@ -24,7 +24,7 @@ O script inicia a WebUI principal, que inclui a seção **Fábrica de vídeos Lo
 
 O limite acima aceita até 2 GB por upload. Ajuste-o conforme o tamanho dos WAVs e a memória disponível na máquina.
 
-Envie um ou mais `.mp4`, faixas `.mp3`/`.wav`, uma marca `.png`; escolha duração, transição, brilho e X/Y; depois clique em **Gerar Vídeo Longo**.
+Envie um ou mais `.mp4` e faixas `.mp3`/`.wav`; opcionalmente ative a marca `.png`, ajuste X/Y e use **Atualizar pré-visualização da marca d'água**. Depois escolha duração, transição e brilho, e clique em **Gerar Vídeo Longo**.
 
 ## Pipeline
 

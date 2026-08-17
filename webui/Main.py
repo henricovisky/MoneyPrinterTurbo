@@ -3937,14 +3937,23 @@ def _render_lofi_factory():
         accept_multiple_files=True,
         key="lofi_audio_uploads",
     )
-    watermark_upload = st.file_uploader(
-        "Marca d'água (.png)", type=["png", "PNG"], key="lofi_watermark_upload"
+    watermark_enabled = st.checkbox(
+        "Ativar marca d'água", value=True, key="lofi_watermark_enabled"
     )
+    watermark_upload = None
+    if watermark_enabled:
+        watermark_upload = st.file_uploader(
+            "Marca d'água (.png)", type=["png", "PNG"], key="lofi_watermark_upload"
+        )
 
     position_col, effect_col, duration_col = st.columns(3)
     with position_col:
-        watermark_x = st.number_input("Marca d'água X", value=40, step=1, key="lofi_x")
-        watermark_y = st.number_input("Marca d'água Y", value=40, step=1, key="lofi_y")
+        watermark_x = st.number_input(
+            "Marca d'água X", value=40, step=1, key="lofi_x", disabled=not watermark_enabled
+        )
+        watermark_y = st.number_input(
+            "Marca d'água Y", value=40, step=1, key="lofi_y", disabled=not watermark_enabled
+        )
     with effect_col:
         transition_options = {
             "Sem transição": "none",
@@ -3972,10 +3981,41 @@ def _render_lofi_factory():
         )
 
     if st.button(
+        "Atualizar pré-visualização da marca d'água",
+        disabled=not (watermark_enabled and video_uploads and watermark_upload),
+        key="lofi_preview_watermark",
+    ):
+        try:
+            preview_dir = tempfile.mkdtemp(prefix="mpt-lofi-preview-")
+            preview_video = _save_lofi_upload(
+                video_uploads[0], preview_dir, "video", {".mp4"}
+            )
+            preview_watermark = _save_lofi_upload(
+                watermark_upload, preview_dir, "watermark", {".png"}
+            )
+            preview_path = long_video.render_watermark_preview(
+                preview_video,
+                preview_watermark,
+                os.path.join(preview_dir, "watermark-preview.png"),
+                int(watermark_x),
+                int(watermark_y),
+            )
+            st.session_state["lofi_watermark_preview"] = str(preview_path)
+        except Exception as exc:
+            logger.warning(f"Lofi watermark preview failed: {exc}")
+            st.error("Não foi possível gerar a pré-visualização da marca d'água.")
+
+    preview_file = st.session_state.get("lofi_watermark_preview", "")
+    if watermark_enabled and preview_file and os.path.isfile(preview_file):
+        st.image(preview_file, caption="Pré-visualização da marca d'água", width="stretch")
+
+    if st.button(
         "Gerar Vídeo Longo", type="primary", use_container_width=True, key="lofi_generate"
     ):
-        if not video_uploads or not audio_uploads or not watermark_upload:
-            st.error("Envie ao menos um vídeo, uma trilha de áudio e a marca d'água.")
+        if not video_uploads or not audio_uploads or (
+            watermark_enabled and not watermark_upload
+        ):
+            st.error("Envie vídeo e áudio; a marca d'água é necessária somente quando ativada.")
             return
 
         progress = st.progress(0.0, text="Preparando arquivos...")
@@ -3995,8 +4035,10 @@ def _render_lofi_factory():
                 _save_lofi_upload(upload, work_dir, "audio", {".mp3", ".wav"})
                 for upload in audio_uploads
             ]
-            watermark_path = _save_lofi_upload(
-                watermark_upload, work_dir, "watermark", {".png"}
+            watermark_path = (
+                _save_lofi_upload(watermark_upload, work_dir, "watermark", {".png"})
+                if watermark_enabled
+                else None
             )
             output_path = os.path.join(work_dir, "lofi-jazz-1080p.mp4")
             duration, audio_uses, video_count = long_video.render_long_video(
